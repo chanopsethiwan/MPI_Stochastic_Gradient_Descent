@@ -39,8 +39,8 @@ def initialise_weights(features, number_of_neurons):
     n_in = features.shape[1]
 
     # Xavier/Glorot uniform initialization
-    limit_hidden = np.sqrt(1 / (n_in + number_of_neurons))
-    limit_output = np.sqrt(1 / (number_of_neurons + 1))  # +1 for scalar output neuron
+    limit_hidden = np.sqrt(6 / (n_in + number_of_neurons))
+    limit_output = np.sqrt(6 / (number_of_neurons + 1))  # +1 for scalar output neuron
 
     weights_dict = {}
     # Hidden layer weights and bias
