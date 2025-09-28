@@ -10,7 +10,7 @@ def random_batch(X, y, batch_size=100):
     if len(X) == 0:
         return []
     idx = np.random.choice(len(X), min(batch_size, len(X)), replace=False)
-    return list(zip(X[idx], y[idx]))
+    return X[idx], y[idx]
 
 
 # -------------------------
@@ -81,10 +81,10 @@ def evaluate(weights, x, activation_func):
     return weights["weights_after_activation"] @ h + weights["bias_after_activation"]
 
 
-def calculate_diff_and_gradients(weights, batch, activation_func):
+def calculate_diff_and_gradients(weights, X, y, activation_func):
     """Compute loss and gradients for one batch."""
-    if not batch:  # empty batch
-        return 0.0, {k: np.zeros_like(v) for k, v in weights.items()}
+    # if not batch:  # empty batch
+    #     return 0.0, {k: np.zeros_like(v) for k, v in weights.items()}
 
     act, act_diff = ACT_FUNCS[activation_func]
 
@@ -94,7 +94,7 @@ def calculate_diff_and_gradients(weights, batch, activation_func):
     grad_ba = 0.0
     diffs = []
 
-    for x, y in batch:
+    for x, y in zip(X, y):
         z = weights["weights_features"] @ x + weights["bias_features"]
         h = act(z)
         h_prime = act_diff(z)
@@ -112,7 +112,7 @@ def calculate_diff_and_gradients(weights, batch, activation_func):
         grad_wf += np.outer(delta_h, x)
         grad_bf += delta_h
 
-    batch_size = len(batch)
+    batch_size = len(X)
     gradients = {
         "grad_weights_features": grad_wf / batch_size,
         "grad_bias_features": grad_bf / batch_size,
@@ -180,15 +180,20 @@ def train(
     weights = comm.bcast(weights, root=0)
 
     train_rmses, test_rmses = [], []
-    small_Xte = Xte_local[:sample_test_size]
-    small_yte = yte_local[:sample_test_size]
+
+    small_Xte, small_yte = random_batch(
+        Xte_local, yte_local, batch_size=sample_test_size
+    )
+    fixed_Xtr, fixed_ytr = random_batch(
+        Xtr_local, ytr_local, batch_size=sample_test_size
+    )
 
     for i in range(n_iter):
         # Draw batch from *local* training set
-        batch = random_batch(Xtr_local, ytr_local, batch_size=batch_size)
+        X, y = random_batch(Xtr_local, ytr_local, batch_size=batch_size)
 
         local_mse, local_grads = calculate_diff_and_gradients(
-            weights, batch, activation_func
+            weights, X, y, activation_func
         )
 
         # Aggregate gradients and loss
@@ -198,14 +203,12 @@ def train(
         global_mse = comm.allreduce(local_mse, op=MPI.SUM) / size
         train_rmse = np.sqrt(global_mse)
 
-        if train_rmse < 1e-4:
-            break
-
         weights = update_weights(weights, global_grads, lr)
 
         # Compute full RMSEs in parallel
         test_rmse = compute_rmse_mpi(small_Xte, small_yte, weights, activation_func)
         # train_rmse = compute_rmse_mpi(Xtr_local, ytr_local, weights, activation_func)
+        train_rmse = compute_rmse_mpi(fixed_Xtr, fixed_ytr, weights, activation_func)
 
         train_rmses.append(train_rmse)
         test_rmses.append(test_rmse)
@@ -214,5 +217,12 @@ def train(
             print(
                 f"Iter {i+1}/{n_iter} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}"
             )
+
+        last_five_rmses = train_rmses[-5:]
+        if (
+            len(last_five_rmses) > 5
+            and max(last_five_rmses) - min(last_five_rmses) < 1e-2
+        ):
+            break
 
     return weights, train_rmses, test_rmses
