@@ -1,4 +1,4 @@
-# 🚀 MPI Setup Across Multiple Macs (with Docker)
+# 🚀 MPI Setup Across Multiple Macs
 
 ## 0. Prerequisites (on all Macs) 
 * Ensure each Mac is on the **same local network** (same wifi)
