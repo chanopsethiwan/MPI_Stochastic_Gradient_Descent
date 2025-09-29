@@ -83,9 +83,6 @@ def evaluate(weights, x, activation_func):
 
 def calculate_diff_and_gradients(weights, X, y, activation_func):
     """Compute loss and gradients for one batch."""
-    # if not batch:  # empty batch
-    #     return 0.0, {k: np.zeros_like(v) for k, v in weights.items()}
-
     act, act_diff = ACT_FUNCS[activation_func]
 
     grad_wf = np.zeros_like(weights["weights_features"])
@@ -163,8 +160,10 @@ def train(
     batch_size=10,
     lr=0.001,
     hidden_dim=1000,
-    n_iter=100,
-    sample_test_size=100000,
+    max_n_iter=100,
+    min_n_iter=5,
+    sample_test_size=1_000_000,
+    stopping_tol=0.1,
 ):
     """
     Train one-hidden-layer NN using SGD + MPI.
@@ -184,11 +183,11 @@ def train(
     small_Xte, small_yte = random_batch(
         Xte_local, yte_local, batch_size=sample_test_size
     )
-    fixed_Xtr, fixed_ytr = random_batch(
-        Xtr_local, ytr_local, batch_size=sample_test_size
-    )
+    # fixed_Xtr, fixed_ytr = random_batch(
+    #     Xtr_local, ytr_local, batch_size=sample_test_size
+    # )
 
-    for i in range(n_iter):
+    for i in range(max_n_iter):
         # Draw batch from *local* training set
         X, y = random_batch(Xtr_local, ytr_local, batch_size=batch_size)
 
@@ -207,22 +206,19 @@ def train(
 
         # Compute full RMSEs in parallel
         test_rmse = compute_rmse_mpi(small_Xte, small_yte, weights, activation_func)
-        # train_rmse = compute_rmse_mpi(Xtr_local, ytr_local, weights, activation_func)
-        train_rmse = compute_rmse_mpi(fixed_Xtr, fixed_ytr, weights, activation_func)
+        # train_rmse = compute_rmse_mpi(fixed_Xtr, fixed_ytr, weights, activation_func)
 
         train_rmses.append(train_rmse)
         test_rmses.append(test_rmse)
 
         if rank == 0:
             print(
-                f"Iter {i+1}/{n_iter} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}"
+                f"Iter {i+1}/{max_n_iter} | Train RMSE: {train_rmse:.4f} | Test RMSE: {test_rmse:.4f}"
             )
 
-        last_five_rmses = train_rmses[-5:]
-        if (
-            len(last_five_rmses) > 5
-            and max(last_five_rmses) - min(last_five_rmses) < 1e-2
-        ):
+        last_five_rmses = test_rmses[-5:]
+        # If the last 5 rmses show no improvement, then stop.
+        if i > min_n_iter and min(last_five_rmses) > min(test_rmses):
             break
 
     return weights, train_rmses, test_rmses
