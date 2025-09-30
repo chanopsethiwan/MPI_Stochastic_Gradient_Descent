@@ -3,3 +3,5 @@ data/
 __pycache__/
 .DS_store
 /nytaxi_mini.csv
+weights/
+final_normalized.npy
